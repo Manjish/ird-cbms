@@ -4,6 +4,8 @@ export const CBMS_MESSAGES = {
   101: "Bill already exists",
   "101-return": "Bill does not exists",
   102: "Exception while saving bill details. Please check model fields and values",
+  "102-return":
+    "Exception while saving credit note. Check that ref_invoice_number matches a bill already posted to CBMS",
   103: "Unknown exceptions. Please check API URL and model fields and values",
   104: "Model invalid",
   105: "Bill does not exists (for Sales Return)",
@@ -24,6 +26,15 @@ function requiredStringCheck(data, keys) {
     const elem = data[k];
     if (typeof elem !== "string" || elem.trim() === "") {
       throw new TypeError(`${k} is required and cannot be empty`);
+    }
+  }
+}
+
+function optionalStringCheck(data, keys) {
+  for (const k of keys) {
+    const elem = data[k];
+    if (elem !== undefined && elem !== null && typeof elem !== "string") {
+      throw new TypeError(`${k} must be a string`);
     }
   }
 }
@@ -81,6 +92,19 @@ function checkSalesAmounts(bill) {
   }
 }
 
+function toCBMSCode(raw, isReturn) {
+  return isReturn && (raw === "101" || raw === "102") ? `${raw}-return` : raw;
+}
+
+function codeFromErrorBody(text) {
+  try {
+    const { message } = JSON.parse(text);
+    return typeof message === "string" ? message.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default class CBMS {
   static BASE_URL = "https://cbapi.ird.gov.np";
   static TIMEOUT_MS = 20_000;
@@ -95,11 +119,11 @@ export default class CBMS {
   async postBill(bill) {
     assertObject(bill, "bill");
     requiredStringCheck(bill, [
-      "buyer_pan",
       "fiscal_year",
       "invoice_number",
       "invoice_date",
     ]);
+    optionalStringCheck(bill, ["buyer_pan"]);
     checkNotZero(bill, ["total_sales"]);
     checkOptionalAmount(bill, [
       "total_sales",
@@ -115,13 +139,13 @@ export default class CBMS {
   async postBillReturn(bill) {
     assertObject(bill, "bill");
     requiredStringCheck(bill, [
-      "buyer_pan",
       "fiscal_year",
       "ref_invoice_number",
       "credit_note_number",
       "credit_note_date",
       "reason_for_return",
     ]);
+    optionalStringCheck(bill, ["buyer_pan"]);
     checkNotZero(bill, ["total_sales"]);
     checkOptionalAmount(bill, [
       "total_sales",
@@ -183,13 +207,31 @@ export default class CBMS {
 
     if (!response.ok) {
       const text = (await response.text().catch(() => "")).trim();
-      throw new CBMSError(`CBMS HTTP ${response.status}`, {
-        status: response.status,
-        responseText: text.slice(0, 500),
-      });
+      // CBMS sends some codes as an HTTP error, e.g. 400 {"message":"104"}.
+      const code = toCBMSCode(codeFromErrorBody(text), isReturn);
+      const known = code !== "200" && Object.hasOwn(CBMS_MESSAGES, code);
+      throw new CBMSError(
+        known ? CBMS_MESSAGES[code] : `CBMS HTTP ${response.status}`,
+        {
+          code: known ? code : undefined,
+          status: response.status,
+          responseText: text.slice(0, 500),
+        },
+      );
     }
 
-    const responseText = (await response.text()).trim();
+    let responseText;
+    try {
+      responseText = (await response.text()).trim();
+    } catch (error) {
+      const timedOut = error?.name === "TimeoutError";
+      throw new CBMSError(
+        timedOut
+          ? `CBMS did not respond within ${CBMS.TIMEOUT_MS}ms`
+          : "CBMS response could not be read",
+        { status: response.status, cause: error },
+      );
+    }
     if (!responseText) {
       throw new CBMSError("CBMS returned an empty response body", {
         status: response.status,
@@ -199,8 +241,7 @@ export default class CBMS {
     if (responseText === "200")
       return { code: "200", message: CBMS_MESSAGES[200] };
 
-    const code =
-      isReturn && responseText === "101" ? "101-return" : responseText;
+    const code = toCBMSCode(responseText, isReturn);
     const message =
       CBMS_MESSAGES[code] ??
       `CBMS returned unrecognised response: ${responseText}`;

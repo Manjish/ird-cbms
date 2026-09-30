@@ -45,7 +45,7 @@ try {
     // CBMS rejected the bill, or the request failed
     console.error(error.code, error.message); // e.g. "101" "Bill already exists"
   } else {
-    // Almost always a validation TypeError: nothing was sent
+    // TypeError: the bill failed validation and nothing was sent
     throw error;
   }
 }
@@ -73,11 +73,13 @@ await cbms.postBillReturn({
 
 ### Required text fields
 
-- Both methods: `buyer_pan`, `fiscal_year`
+- Both methods: `fiscal_year`
 - `postBill`: `invoice_number`, `invoice_date`
 - `postBillReturn`: `ref_invoice_number`, `credit_note_number`, `credit_note_date`, `reason_for_return`
 
-Each must be a string with at least one non-space character. Pass PANs as strings, because a number such as `123456789` is rejected. `buyer_pan` can't be empty, so the library can't currently post a bill for a buyer who has no PAN.
+Each must be a string with at least one non-space character.
+
+`buyer_pan` is optional. For a buyer who has no PAN, leave it out or send `""`; on the test account, CBMS accepted both. If you give one, it must be a string, because a number such as `123456789` is rejected.
 
 Write dates in Bikram Sambat as `YYYY.MM.DD`, for example `"2083.06.14"`, and the fiscal year as `"2083.084"` for 2083/84. That's the format IRD's own examples use. The library doesn't check formats, so a wrong one goes straight to CBMS.
 
@@ -143,12 +145,10 @@ On success, both methods return `{ code: "200", message: "Success" }`. The clien
 
 | Property | Meaning |
 |---|---|
-| `code` | The code CBMS returned, such as `"101"`. On a credit note, `101` becomes `"101-return"`. For a response the client doesn't recognise, this is the whole response body. Not set for timeouts, network errors, HTTP errors or empty responses. |
-| `status` | The HTTP status. Set only for HTTP errors and empty responses. |
-| `responseText` | The response body, with surrounding whitespace trimmed. For HTTP errors, only the first 500 characters. It stays `"101"` when `code` is `"101-return"`. Not set for timeouts, network errors or empty responses. |
-| `cause` | The underlying error when the request failed or timed out. For a timeout, `error.cause.name` is `"TimeoutError"`. |
-
-There is one rare exception. If the connection drops or the timeout fires while the response body is being read, that underlying error is thrown as-is instead of as a `CBMSError`. By that point the bill has already reached CBMS.
+| `code` | The code CBMS returned, such as `"101"`. On a credit note, `101` and `102` become `"101-return"` and `"102-return"`. For a response the client doesn't recognise, this is the whole response body. CBMS sends some codes as an HTTP error, such as `104` as an HTTP 400 with body `{"message":"104"}`, and those still get their `code`. Not set for timeouts, network errors, empty responses or other HTTP errors. |
+| `status` | The HTTP status. Set only for HTTP errors, empty responses and responses that couldn't be read. |
+| `responseText` | The response body, with surrounding whitespace trimmed. For HTTP errors, only the first 500 characters. It keeps the raw code, for example `"102"` when `code` is `"102-return"`. Not set for timeouts, network errors or empty responses. |
+| `cause` | The underlying error when the request failed, timed out, or its response couldn't be read. For a timeout, `error.cause.name` is `"TimeoutError"`. |
 
 ### CBMS codes
 
@@ -157,23 +157,26 @@ There is one rare exception. If the connection drops or the timeout fires while 
 | Code | Message | What to do |
 |---|---|---|
 | `100` | API credentials do not match | Check the `username`, `password` and `pan` you passed to `new CBMS()`. |
-| `101` | Bill already exists | CBMS already has this invoice number. If this was a retry, the earlier attempt went through. See [If a request fails](#if-a-request-fails). |
-| `101-return` | Bill does not exists | See the note below this table. |
+| `101` | Bill already exists | CBMS already has this invoice number. If this was a retry, the earlier attempt went through. See [If a request fails](#if-a-request-fails). On the test account, a number was also rejected when re-sent under a different `fiscal_year`. |
+| `101-return` | Bill does not exists | IRD documents this code, but it never came back on the test account. See the note below this table. |
 | `102` | Exception while saving bill details. Please check model fields and values | Check field names and value types. Don't retry without changing anything. |
+| `102-return` | Exception while saving credit note. Check that ref_invoice_number matches a bill already posted to CBMS | CBMS sent `102` for a credit note. On the test account, this is what came back when `ref_invoice_number` matched no posted bill. Check that first, then the other fields. |
 | `103` | Unknown exceptions. Please check API URL and model fields and values | Same as `102`. |
-| `104` | Model invalid | Same as `102`. |
-| `105` | Bill does not exists (for Sales Return) | Check that `ref_invoice_number` matches the `invoice_number` of a bill you've already posted. |
+| `104` | Model invalid | Same as `102`. On the test account, CBMS sent this as an HTTP 400 with body `{"message":"104"}`. |
+| `105` | Bill does not exists (for Sales Return) | IRD documents this code, but it never came back on the test account. See the note below this table. |
 
-IRD's document says that on `/api/billreturn`, `101` means "bill does not exists", which is why the client reports it as `101-return`. The same list gives `105` that meaning too, and some other CBMS integrations read `101` on a credit note as "already exists". So the meaning of `101` on a credit note isn't confirmed.
+For credit notes, IRD's document lists `101` and `105` as "bill does not exists". On the test account, a credit note whose `ref_invoice_number` matched no posted bill returned `102` instead, every time. That's why the client reports a `102` on a credit note as `102-return`, with a message pointing at `ref_invoice_number`.
 
 ### If a request fails
 
-A `CBMSError` without a `code` doesn't tell you whether CBMS saved the bill. That covers timeouts, network errors, HTTP errors and empty responses. To find out, send the same bill again with the **same** `invoice_number`:
+A `CBMSError` without a `code` doesn't tell you whether CBMS saved the bill. That covers timeouts, network errors, HTTP errors, empty responses and responses that couldn't be read. To find out, send the same bill again with the **same** `invoice_number`:
 
 - `200` means it's saved now.
 - `101` means the first attempt was saved.
 
-Never give a bill a new invoice number to get past a `101`, because that reports the sale twice. This applies to bills; how CBMS answers a resent credit note hasn't been checked.
+Never give a bill a new invoice number to get past a `101`, because that reports the sale twice.
+
+**This doesn't work for credit notes.** CBMS doesn't reject a duplicate credit note. On the test account, the same credit note sent twice returned `200` both times, so resending one can record it twice. CBMS also accepted credit notes whose `fiscal_year` or `buyer_pan` differed from the original bill, and one for more than the bill's total. The only thing it checked was that `ref_invoice_number` matched a posted bill.
 
 ## Testing against CBMS
 
@@ -207,4 +210,4 @@ CBMS.TIMEOUT_MS = 30_000;
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
