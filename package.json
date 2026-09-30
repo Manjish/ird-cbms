@@ -1,0 +1,21 @@
+{
+  "name": "ird-cbms",
+  "version": "0.1.0",
+  "description": "Client for Nepal IRD's Central Billing Monitoring System (CBMS) API. Use it to post your bills and credit notes. ",
+  "keywords": [
+    "nepal",
+    "ird",
+    "cbms",
+    "invoice",
+    "tax",
+    "billing",
+    "vat"
+  ],
+  "license": "MIT",
+  "author": "Manjish",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
