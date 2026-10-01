@@ -79,7 +79,7 @@ await cbms.postBillReturn({
 
 Each must be a string with at least one non-space character.
 
-`buyer_pan` is optional. For a buyer who has no PAN, leave it out or send `""`; on the test account, CBMS accepted both. If you give one, it must be a string, because a number such as `123456789` is rejected.
+`buyer_pan` is optional. For a buyer who has no PAN, leave it out or send `""`; on the test account, CBMS accepted both. `null` also passes the library's check and is sent as `null`, but how CBMS handles that hasn't been tested. Any other value must be a string, because a number such as `123456789` is rejected.
 
 Write dates in Bikram Sambat as `YYYY.MM.DD`, for example `"2083.06.14"`, and the fiscal year as `"2083.084"` for 2083/84. That's the format IRD's own examples use. The library doesn't check formats, so a wrong one goes straight to CBMS.
 
@@ -145,10 +145,10 @@ On success, both methods return `{ code: "200", message: "Success" }`. The clien
 
 | Property | Meaning |
 |---|---|
-| `code` | The code CBMS returned, such as `"101"`. On a credit note, `101` and `102` become `"101-return"` and `"102-return"`. For a response the client doesn't recognise, this is the whole response body. CBMS sends some codes as an HTTP error, such as `104` as an HTTP 400 with body `{"message":"104"}`, and those still get their `code`. Not set for timeouts, network errors, empty responses or other HTTP errors. |
+| `code` | The code CBMS returned, such as `"101"`. On a credit note, `101` and `102` become `"101-return"` and `"102-return"`. CBMS sends some codes as an HTTP error, such as `104` as an HTTP 400 with body `{"message":"104"}`. When an HTTP error's JSON body has a `message` that is one of the codes below, `code` is set to it. If a successful HTTP response isn't a code the client recognises, `code` is the whole response body. Not set for timeouts, network errors, empty responses, responses that couldn't be read, or other HTTP errors. |
 | `status` | The HTTP status. Set only for HTTP errors, empty responses and responses that couldn't be read. |
-| `responseText` | The response body, with surrounding whitespace trimmed. For HTTP errors, only the first 500 characters. It keeps the raw code, for example `"102"` when `code` is `"102-return"`. Not set for timeouts, network errors or empty responses. |
-| `cause` | The underlying error when the request failed, timed out, or its response couldn't be read. For a timeout, `error.cause.name` is `"TimeoutError"`. |
+| `responseText` | What CBMS actually sent, with surrounding whitespace trimmed. For HTTP errors, only the first 500 characters. For example, it's `"102"` when `code` is `"102-return"`, or `{"message":"104"}` for a code sent as an HTTP error. For an HTTP error whose body was empty or couldn't be read, it's `""`. Not set for timeouts, network errors, or successful responses that were empty or couldn't be read. |
+| `cause` | The underlying error when the request failed or timed out, or when a successful response's body couldn't be read. For a timeout, `error.cause.name` is `"TimeoutError"`. |
 
 ### CBMS codes
 
@@ -169,7 +169,7 @@ For credit notes, IRD's document lists `101` and `105` as "bill does not exists"
 
 ### If a request fails
 
-A `CBMSError` without a `code` doesn't tell you whether CBMS saved the bill. That covers timeouts, network errors, HTTP errors, empty responses and responses that couldn't be read. To find out, send the same bill again with the **same** `invoice_number`:
+If a `CBMSError` has no `code`, or a `code` that isn't in `CBMS_MESSAGES`, you can't tell whether CBMS saved the bill. That covers timeouts, network errors, empty responses, responses that couldn't be read, HTTP errors without a known CBMS code, and responses the client didn't recognise, such as an HTML page from a proxy. To find out, send the same bill again with the **same** `invoice_number`:
 
 - `200` means it's saved now.
 - `101` means the first attempt was saved.
@@ -184,9 +184,11 @@ Test mode and live mode use the same URL. IRD's API document uses these test cre
 
 | Setting | Value |
 |---|---|
-| `username` | `Test_CBMS` |
-| `password` | `test@321` |
-| `pan` | `999999999` |
+| `username` | `"Test_CBMS"` |
+| `password` | `"test@321"` |
+| `pan` | `"999999999"` |
+
+`new CBMS()` needs all three as non-empty strings. A numeric `pan` such as `999999999` is rejected.
 
 For live mode, use your taxpayer login's user ID and password and your own PAN. If you change the taxpayer login password, change the `password` you pass to `new CBMS()` too. Until you do, every post fails with `100`.
 
