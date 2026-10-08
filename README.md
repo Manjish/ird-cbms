@@ -11,10 +11,8 @@ It checks each bill before sending it, because CBMS has accepted bills whose amo
 
 ## Install
 
-The package isn't on npm, and its GitHub repo is private for now. Once you have read access, install it from GitHub:
-
 ```sh
-npm install github:Manjish/ird-cbms
+npm install ird-cbms
 ```
 
 ## Quick start
