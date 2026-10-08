@@ -25,7 +25,7 @@ function requiredStringCheck(data, keys) {
   for (const k of keys) {
     const elem = data[k];
     if (typeof elem !== "string" || elem.trim() === "") {
-      throw new TypeError(`${k} is required and cannot be empty`);
+      throw new TypeError(`${k} is required and must be a non-empty string`);
     }
   }
 }
@@ -165,23 +165,6 @@ export default class CBMS {
       username: this.username,
       password: this.password,
       seller_pan: this.pan,
-      // buyer_pan:"",
-      // buyer_name: "",
-      // fiscal_year: "",
-      // invoice_number: "TST-001",
-      // invoice_date: "2083.06.05",
-      // total_sales:113,
-      // taxable_sales_vat:100,
-      // vat:13,
-      // excisable_amount: 0,
-      // excise: 0,
-      // taxable_sales_hst: 0,
-      // hst: 0,
-      // amount_for_esf: 0,
-      // esf: 0,
-      // export_sales: 0,
-      // tax_exempted_sales: 0,
-      // datetimeclient: "",
     };
     const body = JSON.stringify(payload);
     let response;
@@ -242,9 +225,9 @@ export default class CBMS {
       return { code: "200", message: CBMS_MESSAGES[200] };
 
     const code = toCBMSCode(responseText, isReturn);
-    const message =
-      CBMS_MESSAGES[code] ??
-      `CBMS returned unrecognised response: ${responseText}`;
+    const message = Object.hasOwn(CBMS_MESSAGES, code)
+      ? CBMS_MESSAGES[code]
+      : `CBMS returned unrecognised response: ${responseText}`;
 
     throw new CBMSError(message, { code, responseText });
   }
