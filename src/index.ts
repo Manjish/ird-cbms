@@ -22,16 +22,16 @@ interface BillBase {
   buyer_pan?: string | null;
   buyer_name?: string;
   total_sales: number;
-  taxable_sales_vat?: number;
-  vat?: number;
-  tax_exempted_sales?: number;
-  export_sales?: number;
-  excisable_amount?: number;
-  excise?: number;
-  taxable_sales_hst?: number;
-  hst?: number;
-  amount_for_esf?: number;
-  esf?: number;
+  taxable_sales_vat?: number | null;
+  vat?: number | null;
+  tax_exempted_sales?: number | null;
+  export_sales?: number | null;
+  excisable_amount?: number | null;
+  excise?: number | null;
+  taxable_sales_hst?: number | null;
+  hst?: number | null;
+  amount_for_esf?: number | null;
+  esf?: number | null;
   datetimeClient?: string;
   isrealtime?: boolean;
 }
@@ -150,13 +150,17 @@ function checkOptionalAmount<T extends object>(
 function checkSalesAmounts(bill: Bill | BillReturn): void {
   const {
     total_sales,
-    taxable_sales_vat = 0,
-    vat = 0,
-    tax_exempted_sales = 0,
-    export_sales = 0,
+    taxable_sales_vat,
+    vat,
+    tax_exempted_sales,
+    export_sales,
   } = bill;
   const diff =
-    total_sales - (taxable_sales_vat + vat + tax_exempted_sales + export_sales);
+    total_sales -
+    ((taxable_sales_vat ?? 0) +
+      (vat ?? 0) +
+      (tax_exempted_sales ?? 0) +
+      (export_sales ?? 0));
   if (diff < -1 || diff > 1) {
     throw new TypeError(
       "The total_sales amount does not match up with the subitems total. Please recheck the values.",
@@ -243,7 +247,7 @@ export default class CBMS {
     return await this.postRequest("/api/billreturn", bill, { isReturn: true });
   }
 
-  async postRequest(
+  private async postRequest(
     path: string,
     bill: Bill | BillReturn,
     { isReturn = false }: { isReturn?: boolean } = {},
