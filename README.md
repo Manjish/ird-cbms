@@ -7,7 +7,6 @@ It checks each bill before sending it, because CBMS has accepted bills whose amo
 ## Requirements
 
 - Node.js 18 or later (uses the built-in `fetch`)
-- The package is an ES module. From a CommonJS project, load it with `const { default: CBMS, CBMSError } = await import("ird-cbms");`
 
 ## Install
 
@@ -47,6 +46,20 @@ try {
     throw error;
   }
 }
+```
+
+### CommonJS
+
+```js
+const { default: CBMS, CBMSError } = require("ird-cbms");
+```
+
+### TypeScript
+
+Types are included. Besides the classes, the package exports the types `CBMSCredentials`, `Bill`, `BillReturn` and `CBMSResult`.
+
+```ts
+import CBMS, { type Bill } from "ird-cbms";
 ```
 
 ## Posting a credit note
