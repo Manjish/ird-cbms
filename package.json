@@ -1,6 +1,6 @@
 {
   "name": "ird-cbms",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Client for Nepal IRD's Central Billing Monitoring System (CBMS) API. Use it to post your bills and credit notes.",
   "keywords": [
     "nepal",
@@ -14,14 +14,30 @@
   ],
   "license": "MIT",
   "author": "Manjish",
-  "type": "module",
-  "main": "./index.js",
-  "exports": "./index.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
   "files": [
-    "index.js"
+    "dist"
   ],
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean --keep-names",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
@@ -30,5 +46,9 @@
   "homepage": "https://github.com/Manjish/ird-cbms#readme",
   "bugs": {
     "url": "https://github.com/Manjish/ird-cbms/issues"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
   }
 }

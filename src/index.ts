@@ -1,4 +1,4 @@
-export const CBMS_MESSAGES = {
+export const CBMS_MESSAGES: Record<string, string> = {
   200: "Success",
   100: "API credentials do not match",
   101: "Bill already exists",
@@ -11,8 +11,68 @@ export const CBMS_MESSAGES = {
   105: "Bill does not exists (for Sales Return)",
 };
 
+export interface CBMSCredentials {
+  username: string;
+  password: string;
+  pan: string;
+}
+
+interface BillBase {
+  fiscal_year: string;
+  buyer_pan?: string | null;
+  buyer_name?: string;
+  total_sales: number;
+  taxable_sales_vat?: number;
+  vat?: number;
+  tax_exempted_sales?: number;
+  export_sales?: number;
+  excisable_amount?: number;
+  excise?: number;
+  taxable_sales_hst?: number;
+  hst?: number;
+  amount_for_esf?: number;
+  esf?: number;
+  datetimeClient?: string;
+  isrealtime?: boolean;
+}
+
+export interface Bill extends BillBase {
+  invoice_number: string;
+  invoice_date: string;
+}
+
+export interface BillReturn extends BillBase {
+  ref_invoice_number: string;
+  credit_note_number: string;
+  credit_note_date: string;
+  reason_for_return: string;
+}
+
+export interface CBMSResult {
+  code: "200";
+  message: string;
+}
+
 export class CBMSError extends Error {
-  constructor(message, { code, status, responseText, cause } = {}) {
+  // declare: emit no field initialisers, so properties keep the order they're assigned in.
+  declare code: string | undefined;
+  declare status: number | undefined;
+  declare responseText: string | undefined;
+
+  constructor(
+    message: string,
+    {
+      code,
+      status,
+      responseText,
+      cause,
+    }: {
+      code?: string;
+      status?: number;
+      responseText?: string;
+      cause?: unknown;
+    } = {},
+  ) {
     super(message, { cause });
     this.name = "CBMSError";
     this.code = code;
@@ -21,33 +81,42 @@ export class CBMSError extends Error {
   }
 }
 
-function requiredStringCheck(data, keys) {
+function requiredStringCheck<T extends object>(
+  data: T,
+  keys: (keyof T & string)[],
+): void {
   for (const k of keys) {
-    const elem = data[k];
+    const elem: unknown = data[k];
     if (typeof elem !== "string" || elem.trim() === "") {
       throw new TypeError(`${k} is required and must be a non-empty string`);
     }
   }
 }
 
-function optionalStringCheck(data, keys) {
+function optionalStringCheck<T extends object>(
+  data: T,
+  keys: (keyof T & string)[],
+): void {
   for (const k of keys) {
-    const elem = data[k];
+    const elem: unknown = data[k];
     if (elem !== undefined && elem !== null && typeof elem !== "string") {
       throw new TypeError(`${k} must be a string`);
     }
   }
 }
 
-function assertObject(data, label) {
+function assertObject(data: unknown, label: string): void {
   if (data === null || typeof data !== "object") {
     throw new TypeError(`${label} must be an object`);
   }
 }
 
-function checkNotZero(data, keys) {
+function checkNotZero<T extends object>(
+  data: T,
+  keys: (keyof T & string)[],
+): void {
   for (const k of keys) {
-    const elem = data[k];
+    const elem: unknown = data[k];
     if (elem === undefined || elem === null) {
       throw new TypeError(`${k} is required`);
     }
@@ -61,9 +130,12 @@ function checkNotZero(data, keys) {
   }
 }
 
-function checkOptionalAmount(data, keys) {
+function checkOptionalAmount<T extends object>(
+  data: T,
+  keys: (keyof T & string)[],
+): void {
   for (const k of keys) {
-    const elem = data[k];
+    const elem: unknown = data[k];
     if (elem === undefined || elem === null) continue;
 
     if (typeof elem !== "number" || !Number.isFinite(elem)) {
@@ -75,7 +147,7 @@ function checkOptionalAmount(data, keys) {
   }
 }
 
-function checkSalesAmounts(bill) {
+function checkSalesAmounts(bill: Bill | BillReturn): void {
   const {
     total_sales,
     taxable_sales_vat = 0,
@@ -92,23 +164,36 @@ function checkSalesAmounts(bill) {
   }
 }
 
-function toCBMSCode(raw, isReturn) {
+function toCBMSCode<T extends string | undefined>(
+  raw: T,
+  isReturn: boolean,
+): string | T {
   return isReturn && (raw === "101" || raw === "102") ? `${raw}-return` : raw;
 }
 
-function codeFromErrorBody(text) {
+function codeFromErrorBody(text: string): string | undefined {
   try {
-    const { message } = JSON.parse(text);
+    const { message }: { message?: unknown } = JSON.parse(text);
     return typeof message === "string" ? message.trim() : undefined;
   } catch {
     return undefined;
   }
 }
 
+function isTimeout(error: unknown): boolean {
+  return (
+    (error as { name?: unknown } | null | undefined)?.name === "TimeoutError"
+  );
+}
+
 export default class CBMS {
   static BASE_URL = "https://cbapi.ird.gov.np";
   static TIMEOUT_MS = 20_000;
-  constructor(credentials) {
+  username: string;
+  password: string;
+  pan: string;
+
+  constructor(credentials: CBMSCredentials) {
     assertObject(credentials, "credentials");
     requiredStringCheck(credentials, ["username", "password", "pan"]);
     this.username = credentials.username;
@@ -116,7 +201,7 @@ export default class CBMS {
     this.pan = credentials.pan;
   }
 
-  async postBill(bill) {
+  async postBill(bill: Bill): Promise<CBMSResult> {
     assertObject(bill, "bill");
     requiredStringCheck(bill, [
       "fiscal_year",
@@ -136,7 +221,7 @@ export default class CBMS {
     return await this.postRequest("/api/bill", bill);
   }
 
-  async postBillReturn(bill) {
+  async postBillReturn(bill: BillReturn): Promise<CBMSResult> {
     assertObject(bill, "bill");
     requiredStringCheck(bill, [
       "fiscal_year",
@@ -158,7 +243,11 @@ export default class CBMS {
     return await this.postRequest("/api/billreturn", bill, { isReturn: true });
   }
 
-  async postRequest(path, bill, { isReturn = false } = {}) {
+  async postRequest(
+    path: string,
+    bill: Bill | BillReturn,
+    { isReturn = false }: { isReturn?: boolean } = {},
+  ): Promise<CBMSResult> {
     const payload = {
       isrealtime: true,
       ...bill,
@@ -167,7 +256,7 @@ export default class CBMS {
       seller_pan: this.pan,
     };
     const body = JSON.stringify(payload);
-    let response;
+    let response: Response;
     try {
       response = await fetch(`${CBMS.BASE_URL}${path}`, {
         method: "POST",
@@ -179,7 +268,7 @@ export default class CBMS {
         signal: AbortSignal.timeout(CBMS.TIMEOUT_MS),
       });
     } catch (error) {
-      const timedOut = error?.name === "TimeoutError";
+      const timedOut = isTimeout(error);
       throw new CBMSError(
         timedOut
           ? `CBMS did not respond within ${CBMS.TIMEOUT_MS}ms`
@@ -192,7 +281,10 @@ export default class CBMS {
       const text = (await response.text().catch(() => "")).trim();
       // CBMS sends some codes as an HTTP error, e.g. 400 {"message":"104"}.
       const code = toCBMSCode(codeFromErrorBody(text), isReturn);
-      const known = code !== "200" && Object.hasOwn(CBMS_MESSAGES, code);
+      const known =
+        code !== undefined &&
+        code !== "200" &&
+        Object.hasOwn(CBMS_MESSAGES, code);
       throw new CBMSError(
         known ? CBMS_MESSAGES[code] : `CBMS HTTP ${response.status}`,
         {
@@ -203,11 +295,11 @@ export default class CBMS {
       );
     }
 
-    let responseText;
+    let responseText: string;
     try {
       responseText = (await response.text()).trim();
     } catch (error) {
-      const timedOut = error?.name === "TimeoutError";
+      const timedOut = isTimeout(error);
       throw new CBMSError(
         timedOut
           ? `CBMS did not respond within ${CBMS.TIMEOUT_MS}ms`
